@@ -43,13 +43,33 @@ CONF = cfg.CONF
 CONF.register_opts(scheduler_driver_opts)
 
 
-def volume_update_db(context, volume_id, host):
+def volume_update_db(context, volume_id, host, replica=None):
     '''Set the host and set the scheduled_at field of a volume.
+
+    If this is a replicated volume, create a new DB entry for the replica and
+    set the links between them in replication_partner.
 
     :returns: A Volume with the updated fields set properly.
     '''
     now = timeutils.utcnow()
     values = {'host': host, 'scheduled_at': now}
+    if replica:
+        volume_ref = db.volume_get(context, volume_id)
+        updates = {'size': volume_ref['size'],
+                   'ec2_id': volume_ref['ec2_id'],
+                   'user_id': volume_ref['user_id'],
+                   'project_id': volume_ref['project_id'],
+                   'scheduled_at': now,
+                   'created_at': volume_ref['created_at'],
+                   'updated_at': volume_ref['updated_at'],
+                   'display_name': volume_ref['display_name'],
+                   'display_description': volume_ref['display_description'],
+                   'status': 'replica_creating',
+                   'replica_id': volume_id}
+        replica.update(updates)
+        replica_ref = db.volume_create(context, replica)
+        values['replica_id'] = replica_ref['id']
+
     return db.volume_update(context, volume_id, values)
 
 

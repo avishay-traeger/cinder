@@ -1325,6 +1325,14 @@ port_speed!N/A
         del vol['copies'][copy_id]
         return ('', '')
 
+    def _cmd_lspartnership(self, **kwargs):
+        rows = []
+        rows.append(['id', 'name', 'location', 'partnership', 'bandwidth'])
+        rows.append(['0000000000000123', 'test-host1', 'local', '', ''])
+        rows.append(['0000000000000456', 'test-host2', 'remote',
+                     'fully_configured', '50'])
+        return self._print_info_cmd(rows=rows, **kwargs)
+
     def _add_host_to_list(self, connector):
         host_info = {}
         host_info['id'] = self._find_unused_id(self._hosts_list)
@@ -1421,6 +1429,8 @@ port_speed!N/A
             out, err = self._cmd_lsvdiskcopy(**kwargs)
         elif command == 'rmvdiskcopy':
             out, err = self._cmd_rmvdiskcopy(**kwargs)
+        elif command == 'lspartnership':
+            out, err = self._cmd_lspartnership(**kwargs)
         else:
             out, err = ('', 'ERROR: Unsupported command')
 

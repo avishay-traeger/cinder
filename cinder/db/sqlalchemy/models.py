@@ -104,6 +104,7 @@ class Volume(BASE, CinderBase):
     status = Column(String(255))  # TODO(vish): enum?
     attach_status = Column(String(255))  # TODO(vish): enum
     migration_status = Column(String(255))
+    replica_id = Column(String(36), ForeignKey('volumes.id'))
 
     scheduled_at = Column(DateTime)
     launched_at = Column(DateTime)

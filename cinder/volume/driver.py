@@ -472,6 +472,10 @@ class VolumeDriver(object):
         """
         return (False, None)
 
+    def create_replica(self, context, replica):
+        msg = _("create_replica not implemented")
+        raise NotImplementedError(msg)
+
 
 class ISCSIDriver(VolumeDriver):
     """Executes commands relating to ISCSI volumes.

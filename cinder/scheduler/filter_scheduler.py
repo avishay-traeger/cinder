@@ -1,3 +1,4 @@
+# Copyright 2013 IBM Corp.
 # Copyright (c) 2011 Intel Corporation
 # Copyright (c) 2011 OpenStack Foundation
 # All Rights Reserved.
@@ -15,15 +16,18 @@
 #    under the License.
 
 """
-The FilterScheduler is for creating volumes.
-You can customize this scheduler by specifying your own volume Filters and
-Weighing Functions.
+The FilterScheduler is for dealing with volume placement.
+You can customize this scheduler by specifying your own filters and
+weights functions.
 """
+
+import operator
 
 from oslo.config import cfg
 
 from cinder import exception
 from cinder.openstack.common import log as logging
+from cinder.openstack.common import strutils
 from cinder.scheduler import driver
 from cinder.scheduler import scheduler_options
 
@@ -50,8 +54,9 @@ class FilterScheduler(driver.Scheduler):
         return self.options.get_configuration()
 
     def populate_filter_properties(self, request_spec, filter_properties):
-        """Stuff things into filter_properties.  Can be overridden in a
-        subclass to add more data.
+        """Stuff things into filter_properties.
+
+        Can be overridden in a subclass to add more data.
         """
         vol = request_spec['volume_properties']
         filter_properties['size'] = vol['size']
@@ -60,19 +65,106 @@ class FilterScheduler(driver.Scheduler):
         filter_properties['metadata'] = vol.get('metadata')
         filter_properties['qos_specs'] = vol.get('qos_specs')
 
+    def _get_replication_hosts(self, context, request_spec, filter_properties):
+        """Find hosts for the volume and its copy if replicaiton is specified.
+
+        Here we use a greedy algorithm and choose the host with the best score
+        after weighing plus its partner, rather than finding an optimal pair
+        (pair with the total best score after weighing).  It is possible for a
+        host to be partnered with itself if that is allowed by its
+        capabilities.
+
+        Note: When checking the case where we use the same host for both
+        copies, we should take size into account twice, but we don't.
+        """
+        def _host_has_replication_caps(capabilities):
+            required = ['replication_unit_id', 'replication_partners',
+                        'replication_rpo_range', 'replication_single_control']
+            reqs_satisfied = True
+            for req in required:
+                if req not in capabilities:
+                    reqs_satisfied = False
+            return reqs_satisfied
+
+        specs = request_spec['volume_type']['extra_specs']
+        same_az = specs.pop('replica_same_az', None)
+        if same_az:
+            same_az = strutils.bool_from_string(same_az)
+        replica_backend_name = specs.pop('replica_volume_backend_name', None)
+        target_rpo = specs.pop('replication_target_rpo', None)
+        weighed_hosts1 = self._get_weighted_candidates(context, request_spec,
+                                                       filter_properties)
+
+        # NOTE(avishay): We now override volume_backend_name with
+        # replica_volume_backend_name, otherwise we won't find other hosts
+        specs.pop('volume_backend_name', None)
+        if replica_backend_name:
+            specs['volume_backend_name'] = replica_backend_name
+
+        weighed_hosts2 = self._get_weighted_candidates(context, request_spec,
+                                                       filter_properties)
+
+        for host1 in weighed_hosts1:
+            caps1 = host1.obj.capabilities
+            if not _host_has_replication_caps(caps1):
+                continue
+            partners1 = caps1['replication_partners']
+
+            if target_rpo is not None:
+                target_rpo = int(target_rpo)
+                rpo_range = caps1['replication_rpo_range']
+                if target_rpo < rpo_range[0] or target_rpo > rpo_range[1]:
+                    continue
+
+            for host2 in weighed_hosts2:
+                if same_az is not None:
+                    op = operator.ne if same_az else operator.eq
+                    if op(host1.obj.service['availability_zone'],
+                          host2.obj.service['availability_zone']):
+                        continue
+
+                caps2 = host2.obj.capabilities
+                if caps2['replication_unit_id'] not in partners1:
+                    continue
+                partners2 = caps2['replication_partners']
+                if caps1['replication_unit_id'] not in partners2:
+                    continue
+
+                return (host1, host2)
+        return (None, None)
+
     def schedule_create_volume(self, context, request_spec, filter_properties):
-        weighed_host = self._schedule(context, request_spec,
-                                      filter_properties)
+        resource_type = request_spec.get('volume_type', None)
+        extra_specs = {}
+        if resource_type:
+            extra_specs = resource_type.get('extra_specs', {})
+
+        volume_id = request_spec.get('volume_id')
+        snapshot_id = request_spec.get('snapshot_id')
+        image_id = request_spec.get('image_id')
+        replica_vol = None
+
+        if 'True' in extra_specs.get('replication_enabled', ''):
+            weighed_host, weighed_host2 = self._get_replication_hosts(
+                context, request_spec, filter_properties)
+        else:
+            weighed_host = self._schedule(context, request_spec,
+                                          filter_properties)
+            weighed_host2 = None
 
         if not weighed_host:
             raise exception.NoValidHost(reason="")
 
-        host = weighed_host.obj.host
-        volume_id = request_spec['volume_id']
-        snapshot_id = request_spec['snapshot_id']
-        image_id = request_spec['image_id']
+        if weighed_host2:
+            az = weighed_host2.obj.service['availability_zone']
+            replica_vol = {'status': 'secondary_replica',
+                           'attach_status': 'detached',
+                           'host': weighed_host2.obj.host,
+                           'availability_zone': az}
 
-        updated_volume = driver.volume_update_db(context, volume_id, host)
+        host = weighed_host.obj.host
+        updated_volume = driver.volume_update_db(context, volume_id, host,
+                                                 replica=replica_vol)
         self._post_select_populate_filter_properties(filter_properties,
                                                      weighed_host.obj)
 

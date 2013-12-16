@@ -41,6 +41,7 @@ from cinder import quota
 from cinder import units
 from cinder import utils
 from cinder.volume.flows import base
+from cinder.volume import rpcapi as volume_rpcapi
 from cinder.volume import utils as volume_utils
 from cinder.volume import volume_types
 
@@ -1464,6 +1465,82 @@ class CreateVolumeFromSpecTask(base.CinderTask):
         return volume_ref
 
 
+class SendCreateVolumeReplicaRPC(base.CinderTask):
+    """Send a create_replica RPC call to the host of the replica.
+
+    If this volume is replicated, send a create_replica request to the host
+    of the replica.
+
+    Reversion strategy: N/A
+    """
+    def __init__(self, db):
+        super(SendCreateVolumeReplicaRPC, self).__init__(addons=[ACTION],
+                                                         requires=['volume'])
+        self.db = db
+        self.rpcapi = volume_rpcapi.VolumeAPI()
+
+    def execute(self, context, volume):
+        replica_id = volume.get('replica_id')
+        if not replica_id:
+            return
+
+        try:
+            replica = self.db.volume_get(context, replica_id)
+        except exception.CinderException as ex:
+            with excutils.save_and_reraise_exception():
+                LOG.exception(_("Failed fetching replica %(replica_id)s of "
+                                "volume %(volume_id)s") %
+                              {'replica_id': replica_id,
+                               'volume_id': volume['id']})
+
+        try:
+            self.rpcapi.create_replica(context, replica)
+        except exception.CinderException as ex:
+            with excutils.save_and_reraise_exception():
+                LOG.exception(_("Failed to create replica of volume %s") %
+                              volume['id'])
+
+    def revert(self, context, result, flow_failures, **kwargs):
+        if isinstance(result, misc.Failure):
+            return
+
+        # Set the volume status to 'error'.
+        volume_id = kwargs['volume_id']
+        _error_out_volume(context, self.db, volume_id)
+
+
+class EnableVolumeReplica(base.CinderTask):
+    """If the volume is replicated, call the driver to enable the replica.
+
+    Reversion strategy: N/A
+    """
+    def __init__(self, db, driver):
+        super(SendCreateVolumeReplicaRPC, self).__init__(addons=[ACTION],
+                                                         requires=['volume'])
+        self.db = db
+        self.driver = driver
+
+    def execute(self, context, volume):
+        replica_id = volume['replica_id']
+        replica = self.db.volume_get(context, replica_id)
+        msg_dict = {'vol': volume['id'], 'rep': replica_id}
+        try:
+            LOG.info(_('volume %(vol)s: enabling replica %(rep)s') % msg_dict)
+            model_update = self.driver.enable_replica(context, replica)
+            LOG.info(_('volume %(vol)s: successfully enabled replica %(rep)s')
+                     % msg_dict)
+            if model_update:
+                self.db.volume_update(context, replica_id, model_update)
+        except Exception:
+            with excutils.save_and_reraise_exception():
+                LOG.exception(_('volume %(vol)s: error enabling replica '
+                                '%(rep)s') % msg_dict)
+                self.db.volume_update(context, volume['id'],
+                                      {'status': 'error'})
+                self.db.volume_update(context, replica_id,
+                                      {'status': 'error'})
+
+
 class CreateVolumeOnFinishTask(NotifyVolumeActionTask):
     """On successful volume creation this will perform final volume actions.
 
@@ -1674,6 +1751,8 @@ def get_manager_flow(context, db, driver, scheduler_rpcapi, host, volume_id,
     volume_flow.add(ExtractVolumeSpecTask(db),
                     NotifyVolumeActionTask(db, host, "create.start"),
                     CreateVolumeFromSpecTask(db, host, driver),
+                    SendCreateVolumeReplicaRPC(db),
+                    #EnableVolumeReplica(db, driver),
                     CreateVolumeOnFinishTask(db, host, "create.end"))
 
     # Now load (but do not run) the flow using the provided initial data.

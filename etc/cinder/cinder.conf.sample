@@ -1680,6 +1680,10 @@
 # Allows vdisk to multi host mapping (boolean value)
 #storwize_svc_multihostmap_enabled=true
 
+# If operating in stretched cluster mode, specify another pool
+# in which to store mirrored copies (string value)
+#storwize_svc_stretched_cluster_partner=<None>
+
 
 #
 # Options defined in cinder.volume.drivers.vmware.vmdk

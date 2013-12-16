@@ -182,7 +182,7 @@ def locked_snapshot_operation(f):
 class VolumeManager(manager.SchedulerDependentManager):
     """Manages attachable block storage devices."""
 
-    RPC_API_VERSION = '1.11'
+    RPC_API_VERSION = '1.12'
 
     def __init__(self, volume_driver=None, service_name=None,
                  *args, **kwargs):
@@ -994,3 +994,30 @@ class VolumeManager(manager.SchedulerDependentManager):
         self._notify_about_volume_usage(
             context, volume, "resize.end",
             extra_usage_info={'size': int(new_size)})
+
+    @utils.require_driver_initialized
+    def create_replica(self, context, replica_id):
+        """Creates a replica of a volume."""
+        replica = self.db.volume_get(context, replica_id)
+        msg_dict = {'vol': replica['replica_id'], 'rep': replica_id}
+        try:
+            LOG.info(_('volume %(vol)s: creating replica %(rep)s') % msg_dict)
+            model_update = self.driver.create_replica(context, replica)
+            LOG.info(_('volume %(vol)s: successfully created replica %(rep)s')
+                     % msg_dict)
+        except Exception:
+            with excutils.save_and_reraise_exception():
+                LOG.exception(_('volume %(vol)s: error creating replica '
+                                '%(rep)s') % msg_dict)
+                self.db.volume_update(context, replica_id,
+                                      {'status': 'error'})
+        if model_update is None:
+            model_update = {}
+        model_update.update({'status': 'replica_created'})
+        try:
+            self.db.volume_update(context, replica_id, model_update)
+        except Exception:
+            with excutils.save_and_reraise_exception():
+                LOG.exception(_('volume %(vol)s: error updating model for '
+                                'replica %(rep)s') % msg_dict)
+                self.driver.delete_replica(context, replica_id)

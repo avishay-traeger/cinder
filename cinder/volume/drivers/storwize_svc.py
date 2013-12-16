@@ -108,6 +108,10 @@ storwize_svc_opts = [
     cfg.BoolOpt('storwize_svc_multihostmap_enabled',
                 default=True,
                 help='Allows vdisk to multi host mapping'),
+    cfg.StrOpt('storwize_svc_stretched_cluster_partner',
+               default=None,
+               help='If operating in stretched cluster mode, specify another '
+                    'pool in which to store mirrored copies'),
 ]
 
 
@@ -212,13 +216,13 @@ class StorwizeSVCDriver(san.SanDriver):
 
         # Validate that the pool exists
         pool = self.configuration.storwize_svc_volpool_name
-        ssh_cmd = ['svcinfo', 'lsmdiskgrp', '-bytes', '-delim', '!', pool]
-        attributes = self._execute_command_and_parse_attributes(ssh_cmd)
-        if not attributes:
-            msg = (_('do_setup: Pool %s does not exist') % pool)
-            LOG.error(msg)
-            raise exception.InvalidInput(reason=msg)
+        attributes = self._get_pool_attrs(pool)
         self._extent_size = attributes['extent_size']
+
+        # Validate that the stretched cluster partner pool exists if specified
+        partner = self.configuration.storwize_svc_stretched_cluster_partner
+        if (partner):
+            self._get_pool_attrs(partner)
 
         # Check if compression is supported
         self._compression_enabled = False
@@ -381,6 +385,9 @@ class StorwizeSVCDriver(san.SanDriver):
 
         opts = self._build_default_opts()
         self._check_vdisk_opts(opts)
+
+        # Try to get replication info to make sure it works
+        self._get_replication_info()
 
         LOG.debug(_('leave: check_for_setup_error'))
 
@@ -1459,6 +1466,53 @@ class StorwizeSVCDriver(san.SanDriver):
                                 ssh_cmd, out, err)
         LOG.debug(_('leave: extend_volume: volume %s') % volume['id'])
 
+    def _add_vdisk_copy(self, volume, dest_pool, opts):
+        """Create a vdisk copy for the given volume."""
+        params = self._get_vdisk_create_params(opts)
+        ssh_cmd = (['svctask', 'addvdiskcopy'] + params + ['-mdiskgrp',
+                   dest_pool, volume['name']])
+        out, err = self._run_ssh(ssh_cmd)
+        self._assert_ssh_return(len(out.strip()), '_add_vdisk_copy',
+                                ssh_cmd, out, err)
+
+        # Ensure that the output is as expected
+        match_obj = re.search('Vdisk \[([0-9]+)\] copy \[([0-9]+)\] '
+                              'successfully created', out)
+        # Make sure we got a "successfully created" message with copy id
+        self._driver_assert(
+            match_obj is not None,
+            _('_add_vdisk_copy %(name)s - did not find '
+              'success message in CLI output.\n '
+              'stdout: %(out)s\n stderr: %(err)s')
+            % {'name': volume['name'], 'out': str(out), 'err': str(err)})
+
+        copy_id = match_obj.group(2)
+        return copy_id
+
+    def _wait_for_vdisk_copy_sync(self, volume, copy_id):
+        sync = False
+        while not sync:
+            ssh_cmd = ['svcinfo', 'lsvdiskcopy', '-delim', '!', '-copy',
+                       copy_id, volume['name']]
+            attrs = self._execute_command_and_parse_attributes(ssh_cmd)
+            if not attrs:
+                msg = (_('_wait_for_vdisk_copy_sync: Could not get vdisk '
+                         'copy data'))
+                LOG.error(msg)
+                raise exception.VolumeBackendAPIException(data=msg)
+            if attrs['sync'] == 'yes':
+                sync = True
+            else:
+                time.sleep(5)
+
+    def _remove_vdisk_copy(self, volume, copy_id):
+        ssh_cmd = ['svctask', 'rmvdiskcopy', '-copy', copy_id,
+                   volume['name']]
+        out, err = self._run_ssh(ssh_cmd)
+        # No output should be returned from rmvdiskcopy
+        self._assert_ssh_return(len(out.strip()) == 0, '_remove_vdisk_copy',
+                                ssh_cmd, out, err)
+
     def migrate_volume(self, ctxt, volume, host):
         """Migrate direclty if source and dest are managed by same storage.
 
@@ -1498,58 +1552,46 @@ class StorwizeSVCDriver(san.SanDriver):
             self._assert_ssh_return(len(out.strip()) == 0, 'migrate_volume',
                                     ssh_cmd, out, err)
         else:
-            # If source and dest pool extent size differ, add/delete vdisk copy
-            copy_info = self._get_vdisk_copy_info(volume['name'])
-            copies = list(copy_info.keys())
-            self._driver_assert(len(copies) == 1,
-                                _('migrate_volume started with more than one '
-                                  'vdisk copy'))
-            orig_copy_id = copies[0]
+            # If source and dest pool extent size differ, add/delete vdisk
+            # copy.
+            this_pool = self.configuration.storwize_svc_volpool_name
+            orig_copy_id = self._find_vdisk_copy_id(this_pool, volume['name'])
+            self._driver_assert(orig_copy_id is not None,
+                                _('migrate_volume started without a vdisk '
+                                  'copy in the expected pool.'))
 
             opts = self._get_vdisk_params(volume['volume_type_id'])
-            params = self._get_vdisk_create_params(opts)
-            ssh_cmd = (['svctask', 'addvdiskcopy'] + params + ['-mdiskgrp',
-                       dest_pool, volume['name']])
-            out, err = self._run_ssh(ssh_cmd)
-            self._assert_ssh_return(len(out.strip()), 'migrate_volume',
-                                    ssh_cmd, out, err)
-
-            # Ensure that the output is as expected
-            match_obj = re.search('Vdisk \[([0-9]+)\] copy \[([0-9]+)\] '
-                                  'successfully created', out)
-            # Make sure we got a "successfully created" message with copy id
-            self._driver_assert(
-                match_obj is not None,
-                _('migrate_volume %(name)s - did not find '
-                  'success message in CLI output.\n '
-                  'stdout: %(out)s\n stderr: %(err)s')
-                % {'name': volume['name'], 'out': str(out), 'err': str(err)})
-
-            copy_id = match_obj.group(2)
-            sync = False
-            while not sync:
-                ssh_cmd = ['svcinfo', 'lsvdiskcopy', '-delim', '!', '-copy',
-                           copy_id, volume['name']]
-                attrs = self._execute_command_and_parse_attributes(ssh_cmd)
-                if not attrs:
-                    msg = (_('migrate_volume: Could not get vdisk copy data'))
-                    LOG.error(msg)
-                    raise exception.VolumeBackendAPIException(data=msg)
-                if attrs['sync'] == 'yes':
-                    sync = True
-                else:
-                    time.sleep(5)
-
-            ssh_cmd = ['svctask', 'rmvdiskcopy', '-copy', orig_copy_id,
-                       volume['name']]
-            out, err = self._run_ssh(ssh_cmd)
-            # No output should be returned from rmvdiskcopy
-            self._assert_ssh_return(len(out.strip()) == 0, 'migrate_volume',
-                                    ssh_cmd, out, err)
+            new_copy_id = self._add_vdisk_copy(volume, dest_pool, opts)
+            self._wait_for_vdisk_copy_sync(volume, new_copy_id)
+            self._remove_vdisk_copy(volume, orig_copy_id)
 
         LOG.debug(_('leave: migrate_volume: id=%(id)s, host=%(host)s') %
                   {'id': volume['id'], 'host': host['host']})
         return (True, None)
+
+    def create_replica(self, ctxt, replica):
+        volume_id = replica['replica_id']
+        volume = self.db.volume_get(ctxt, volume_id)
+        opts = self._get_vdisk_params(volume['volume_type_id'])
+        pool = self.configuration.storwize_svc_volpool_name
+        self._add_vdisk_copy(volume, pool, opts)
+        model_update = {'name_id': volume_id}
+        return model_update
+
+    def enable_replica(self, ctxt, replica):
+        pass
+
+    def delete_replica(self, ctxt, replica):
+        volume_id = replica['replica_id']
+        volume = self.db.volume_get(ctxt, volume_id)
+        this_pool = self.configuration.storwize_svc_volpool_name
+        copy_id = self._find_vdisk_copy_id(this_pool, volume['name'])
+        if copy_id is None:
+            LOG.info(_('Could not find replica to delete of volume %(vol)s in '
+                       'pool %(pool)s') %
+                     {'vol': volume_id, 'pool': this_pool})
+            return
+        self._remove_vdisk_copy(volume, copy_id)
 
     """====================================================================="""
     """ MISC/HELPERS                                                        """
@@ -1605,8 +1647,71 @@ class StorwizeSVCDriver(san.SanDriver):
         data['location_info'] = ('StorwizeSVCDriver:%(sys_id)s:%(pool)s' %
                                  {'sys_id': self._system_id,
                                   'pool': pool})
-
+        data.update(self._get_replication_info())
         self._stats = data
+
+    def _get_replication_info(self):
+        data = {}
+        stretch = self.configuration.storwize_svc_stretched_cluster_partner
+        if stretch:
+            pool = self.configuration.storwize_svc_volpool_name
+            data['replication_enabled'] = True
+            data['replication_rpo_range'] = (0, 0)  # Sync only
+            data['replication_unit_id'] = ('%(sys_id)s:%(pool)s' %
+                                           {'sys_id': self._system_id,
+                                            'pool': pool})
+            partner = ('%(sys_id)s:%(pool)s' %
+                       {'sys_id': self._system_id,
+                        'pool': stretch})
+            data['replication_partners'] = [partner]
+            data['replication_single_control'] = True
+        else:
+            available_partners = []
+            ssh_cmd = ['svcinfo', 'lspartnership', '-delim', '!']
+            out, err = self._run_ssh(ssh_cmd)
+            self._assert_ssh_return(len(out.strip()), '_get_replication_info',
+                                    ssh_cmd, out, err)
+            partners = out.strip().split('\n')
+            self._assert_ssh_return(len(partners), '_get_replication_info',
+                                    ssh_cmd, out, err)
+            header = partners.pop(0)
+            for partner_line in partners:
+                try:
+                    partner_data = self._get_hdr_dic(header, partner_line, '!')
+                    if (partner_data['location']) == 'remote':
+                        available_partners.append(partner_data['id'])
+                except exception.VolumeBackendAPIException:
+                    with excutils.save_and_reraise_exception():
+                        self._log_cli_output_error('_get_replication_info',
+                                                   ssh_cmd, out, err)
+
+            if not available_partners:
+                return {}
+
+            data['replication_enabled'] = True
+            # Cycle time is 1 minute to 1 day, same as RPO (excluding transfer)
+            data['replication_rpo_range'] = (60, 86400)
+            data['replication_unit_id'] = self._system_id
+            data['replication_partners'] = available_partners
+            data['replication_single_control'] = False
+        return data
+
+    def _get_pool_attrs(self, pool):
+        ssh_cmd = ['svcinfo', 'lsmdiskgrp', '-bytes', '-delim', '!', pool]
+        attributes = self._execute_command_and_parse_attributes(ssh_cmd)
+        if not attributes:
+            msg = (_('_get_pool_attrs: Pool %s does not exist') % pool)
+            LOG.error(msg)
+            raise exception.InvalidInput(reason=msg)
+        return attributes
+
+    def _find_vdisk_copy_id(self, pool, name):
+        copies_info = self._get_vdisk_copy_info(name)
+        copy_id = None
+        for cid, cinfo in copies_info.iteritems():
+            if cinfo['mdisk_grp_name'] == pool:
+                return cid
+        return None
 
     def _port_conf_generator(self, cmd):
         ssh_cmd = cmd + ['-delim', '!']
