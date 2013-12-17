@@ -1474,7 +1474,7 @@ class SendCreateVolumeReplicaRPC(base.CinderTask):
     Reversion strategy: N/A
     """
 
-    default_provides = set(['replication_relationship'])
+    default_provides = 'replication_relationship'
 
     def __init__(self, db):
         super(SendCreateVolumeReplicaRPC, self).__init__(addons=[ACTION],
@@ -1506,7 +1506,6 @@ class SendCreateVolumeReplicaRPC(base.CinderTask):
             with excutils.save_and_reraise_exception():
                 LOG.exception(_("Failed to create replica of volume %s") %
                               volume['id'])
-        LOG.error('AVISHAY: RETURNING ' + str(relationship))
         return relationship
 
     def revert(self, context, result, flow_failures, **kwargs):

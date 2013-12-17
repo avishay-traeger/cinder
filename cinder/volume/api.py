@@ -278,6 +278,7 @@ class API(base.Base):
         # Non-admin shouldn't see temporary target of a volume migration
         if not context.is_admin:
             filters['no_migration_targets'] = True
+            filters['no_secondary_replicas'] = True
 
         if filters:
             LOG.debug(_("Searching by: %s") % str(filters))
@@ -299,9 +300,15 @@ class API(base.Base):
                     return False
                 return True
 
+            def _check_secondary(volume, searchdict):
+                if volume['status'].startswith('replica_'):
+                    return False
+                return True
+
             # search_option to filter_name mapping.
             filter_mapping = {'metadata': _check_metadata_match,
-                              'no_migration_targets': _check_migration_target}
+                              'no_migration_targets': _check_migration_target,
+                              'no_secondary_replicas': _check_secondary}
 
             result = []
             not_found = object()

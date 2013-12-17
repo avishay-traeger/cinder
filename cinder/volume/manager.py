@@ -1015,7 +1015,7 @@ class VolumeManager(manager.SchedulerDependentManager):
                                       {'status': 'error'})
         if model_update is None:
             model_update = {}
-        model_update.update({'status': 'available'})
+        model_update.update({'status': 'replica_available'})
         try:
             self.db.volume_update(context, secondary_id, model_update)
         except Exception:

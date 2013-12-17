@@ -55,10 +55,9 @@ def volume_update_db(context, volume_id, host, replica=None):
     values = {'host': host, 'scheduled_at': now}
     if replica:
         volume_ref = db.volume_get(context, volume_id)
-        updates = {'scheduled_at': now}
+        updates = {'scheduled_at': now, 'status': 'replica_creating'}
         for field in ['size', 'ec2_id', 'user_id', 'project_id', 'created_at',
-                      'updated_at', 'display_name', 'display_description',
-                      'status']:
+                      'updated_at', 'display_name', 'display_description']:
             updates[field] = volume_ref[field]
         replica.update(updates)
         replica_ref = db.volume_create(context, replica)
