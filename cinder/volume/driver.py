@@ -472,15 +472,19 @@ class VolumeDriver(object):
         """
         return (False, None)
 
-    def create_replica(self, context, primary, secondary):
+    def create_replica(self, context, primary, secondary, relationship):
         msg = _("create_replica not implemented")
         raise NotImplementedError(msg)
 
-    def enable_replica(self, context, primary, secondary):
+    def enable_replica(self, context, primary, secondary, relationship):
         msg = _("enable_replica not implemented")
         raise NotImplementedError(msg)
 
-    def delete_replica(self, context, primary, secondary):
+    def disable_replica(self, context, primary, secondary, relationship):
+        msg = _("disable_replica not implemented")
+        raise NotImplementedError(msg)
+
+    def delete_replica(self, context, primary, secondary, relationship):
         msg = _("delete_replica not implemented")
         raise NotImplementedError(msg)
 

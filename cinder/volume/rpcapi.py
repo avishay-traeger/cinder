@@ -184,20 +184,18 @@ class VolumeAPI(cinder.openstack.common.rpc.proxy.RpcProxy):
                                                  volume['host']),
                          version='1.10')
 
-    def create_replica(self, ctxt, primary, secondary):
+    def create_replica(self, ctxt, secondary, relationship):
         return self.call(ctxt,
                          self.make_msg('create_replica',
-                                       primary_id=primary['id'],
-                                       secondary_id=secondary['id']),
+                                       relationship_id=relationship['id']),
                          topic=rpc.queue_get_for(ctxt, self.topic,
                                                  secondary['host']),
                          version='1.12')
 
-    def delete_replica(self, ctxt, primary, secondary):
+    def delete_replica(self, ctxt, secondary, relationship):
         return self.call(ctxt,
                          self.make_msg('delete_replica',
-                                       primary_id=primary['id'],
-                                       secondary_id=secondary['id']),
+                                       relationship_id=relationship['id']),
                          topic=rpc.queue_get_for(ctxt, self.topic,
                                                  secondary['host']),
                          version='1.12')

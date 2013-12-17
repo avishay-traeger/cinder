@@ -1569,17 +1569,20 @@ class StorwizeSVCDriver(san.SanDriver):
                   {'id': volume['id'], 'host': host['host']})
         return (True, None)
 
-    def create_replica(self, ctxt, primary, secondary):
+    def create_replica(self, ctxt, primary, secondary, relationship):
         opts = self._get_vdisk_params(primary['volume_type_id'])
         pool = self.configuration.storwize_svc_volpool_name
         self._add_vdisk_copy(primary, pool, opts)
         model_update = {'name_id': primary['id']}
         return model_update
 
-    def enable_replica(self, ctxt, primary, secondary):
+    def enable_replica(self, ctxt, primary, secondary, relationship):
         pass
 
-    def delete_replica(self, ctxt, primary, secondary):
+    def disable_replica(self, ctxt, primary, secondary, relationship):
+        pass
+
+    def delete_replica(self, ctxt, primary, secondary, relationship):
         this_pool = self.configuration.storwize_svc_volpool_name
         copy_id = self._find_vdisk_copy_id(this_pool, primary['name'])
         if copy_id is None:

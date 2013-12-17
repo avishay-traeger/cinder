@@ -367,6 +367,15 @@ class VolumeManager(manager.SchedulerDependentManager):
         try:
             LOG.debug(_("volume %s: removing export"), volume_ref['id'])
             self.driver.remove_export(context, volume_ref)
+            if volume_ref['replication']:
+                relation = self.db.replication_relationship_get_by_volume_id(
+                    context, volume_id)
+                secondary = self.db.volume_get(context,
+                                               relation['secondary_id'])
+                self.driver.disable_replica(context, volume_ref, secondary,
+                                            relation)
+                rpcapi = volume_rpcapi.VolumeAPI()
+                rpcapi.delete_replica(context, secondary, relation)
             LOG.debug(_("volume %s: deleting"), volume_ref['id'])
             self.driver.delete_volume(volume_ref)
         except exception.VolumeIsBusy:
@@ -996,15 +1005,19 @@ class VolumeManager(manager.SchedulerDependentManager):
             extra_usage_info={'size': int(new_size)})
 
     @utils.require_driver_initialized
-    def create_replica(self, context, primary_id, secondary_id):
+    def create_replica(self, context, relationship_id):
         """Creates a replica of a volume."""
+        relationship = self.db.replication_relationship_get(context,
+                                                            relationship_id)
+        primary_id = relationship['primary_id']
+        secondary_id = relationship['secondary_id']
         primary = self.db.volume_get(context, primary_id)
         secondary = self.db.volume_get(context, secondary_id)
         msg_dict = {'vol': primary_id, 'rep': secondary_id}
         try:
             LOG.info(_('volume %(vol)s: creating replica %(rep)s') % msg_dict)
             model_update = self.driver.create_replica(context, primary,
-                                                      secondary)
+                                                      secondary, relationship)
             LOG.info(_('volume %(vol)s: successfully created replica %(rep)s')
                      % msg_dict)
         except Exception:
@@ -1023,3 +1036,27 @@ class VolumeManager(manager.SchedulerDependentManager):
                 LOG.exception(_('volume %(vol)s: error updating model for '
                                 'replica %(rep)s') % msg_dict)
                 self.driver.delete_replica(context, primary, secondary)
+
+    @utils.require_driver_initialized
+    def delete_replica(self, context, relationship_id):
+        """Deletes a replica of a volume."""
+        relationship = self.db.replication_relationship_get(context,
+                                                            relationship_id)
+        primary_id = relationship['primary_id']
+        secondary_id = relationship['secondary_id']
+        primary = self.db.volume_get(context, primary_id)
+        secondary = self.db.volume_get(context, secondary_id)
+        msg_dict = {'vol': primary_id, 'rep': secondary_id}
+        try:
+            LOG.info(_('volume %(vol)s: deleting replica %(rep)s') % msg_dict)
+            self.driver.delete_replica(context, primary, secondary,
+                                       relationship)
+            self.db.volume_destroy(context, secondary)
+            LOG.info(_('volume %(vol)s: successfully deleted replica %(rep)s')
+                     % msg_dict)
+        except Exception:
+            with excutils.save_and_reraise_exception():
+                LOG.exception(_('volume %(vol)s: error deleting replica '
+                                '%(rep)s') % msg_dict)
+                self.db.volume_update(context, secondary_id,
+                                      {'status': 'error'})
