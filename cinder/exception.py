@@ -564,6 +564,16 @@ class KeyManagerError(CinderException):
     msg_fmt = _("key manager error: %(reason)s")
 
 
+class ReplicationRelationshipNotFound(NotFound):
+    message = _("Replication replication %(replication_relationship_id)s "
+                "could not be found.")
+
+
+class VolReplicationRelationshipNotFound(NotFound):
+    message = _("Replication relationship for volume %(volume_id)s "
+                "could not be found.")
+
+
 # Driver specific exceptions
 # Coraid
 class CoraidException(VolumeDriverException):

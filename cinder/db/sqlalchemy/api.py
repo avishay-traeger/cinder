@@ -1125,12 +1125,14 @@ def _volume_get_query(context, session=None, project_only=False):
                            project_only=project_only).\
             options(joinedload('volume_metadata')).\
             options(joinedload('volume_admin_metadata')).\
-            options(joinedload('volume_type'))
+            options(joinedload('volume_type')).\
+            options(joinedload('replication'))
     else:
         return model_query(context, models.Volume, session=session,
                            project_only=project_only).\
             options(joinedload('volume_metadata')).\
-            options(joinedload('volume_type'))
+            options(joinedload('volume_type')).\
+            options(joinedload('replication'))
 
 
 @require_context
@@ -2677,3 +2679,76 @@ def transfer_accept(context, transfer_id, user_id, project_id):
             update({'deleted': True,
                     'deleted_at': timeutils.utcnow(),
                     'updated_at': literal_column('updated_at')})
+
+
+###############################
+
+
+@require_context
+def replication_relationship_get(context, relationship_id):
+    result = model_query(context, models.ReplicationRelationship,
+                         project_only=True).\
+        filter_by(id=relationship_id).\
+        first()
+
+    if not result:
+        raise exception.ReplicationRelationshipNotFound(
+            replication_relationship_id=relationship_id)
+
+    return result
+
+
+@require_context
+def replication_relationship_get_by_volume_id(context, volume_id):
+    result = model_query(context, models.ReplicationRelationship,
+                         project_only=True).\
+        filter(or_(models.ReplicationRelationship.primary_id == volume_id,
+                   models.ReplicationRelationship.secondary_id == volume_id)).\
+        first()
+
+    if not result:
+        raise exception.VolReplicationRelationshipNotFound(volume_id=volume_id)
+
+    return result
+
+
+@require_admin_context
+def replication_relationship_get_all(context):
+    return model_query(context, models.ReplicationRelationship).all()
+
+
+@require_context
+def replication_relationship_create(context, values):
+    relationship = models.ReplicationRelationship()
+    if not values.get('id'):
+        values['id'] = str(uuid.uuid4())
+    relationship.update(values)
+    relationship.save()
+    return relationship
+
+
+@require_context
+def replication_relationship_update(context, relationship_id, values):
+    session = get_session()
+    with session.begin():
+        relationship = model_query(context, models.ReplicationRelationship,
+                                   session=session, read_deleted="yes").\
+            filter_by(id=relationship_id).first()
+
+        if not relationship:
+            raise exception.ReplicationRelationshipNotFound(
+                replication_relationship_id=relationship_id)
+
+        relationship.update(values)
+        relationship.save(session=session)
+    return relationship
+
+
+@require_context
+def replication_relationship_destroy(context, relationship_id):
+    model_query(context, models.ReplicationRelationship).\
+        filter_by(id=relationship_id).\
+        update({'status': 'deleted',
+                'deleted': True,
+                'deleted_at': timeutils.utcnow(),
+                'updated_at': literal_column('updated_at')})

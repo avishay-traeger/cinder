@@ -55,20 +55,17 @@ def volume_update_db(context, volume_id, host, replica=None):
     values = {'host': host, 'scheduled_at': now}
     if replica:
         volume_ref = db.volume_get(context, volume_id)
-        updates = {'size': volume_ref['size'],
-                   'ec2_id': volume_ref['ec2_id'],
-                   'user_id': volume_ref['user_id'],
-                   'project_id': volume_ref['project_id'],
-                   'scheduled_at': now,
-                   'created_at': volume_ref['created_at'],
-                   'updated_at': volume_ref['updated_at'],
-                   'display_name': volume_ref['display_name'],
-                   'display_description': volume_ref['display_description'],
-                   'status': 'replica_creating',
-                   'replica_id': volume_id}
+        updates = {'scheduled_at': now}
+        for field in ['size', 'ec2_id', 'user_id', 'project_id', 'created_at',
+                      'updated_at', 'display_name', 'display_description',
+                      'status']:
+            updates[field] = volume_ref[field]
         replica.update(updates)
         replica_ref = db.volume_create(context, replica)
-        values['replica_id'] = replica_ref['id']
+        replication = {'primary_id': volume_id,
+                       'secondary_id': replica_ref['id'],
+                       'status': 'starting'}
+        db.replication_relationship_create(context, replication)
 
     return db.volume_update(context, volume_id, values)
 

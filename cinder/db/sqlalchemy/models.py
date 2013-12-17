@@ -24,7 +24,7 @@ SQLAlchemy models for cinder data.
 
 from sqlalchemy import Column, Integer, String, Text, schema
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy import ForeignKey, DateTime, Boolean
+from sqlalchemy import ForeignKey, DateTime, Boolean, Enum
 from sqlalchemy.orm import relationship, backref
 
 from oslo.config import cfg
@@ -104,7 +104,6 @@ class Volume(BASE, CinderBase):
     status = Column(String(255))  # TODO(vish): enum?
     attach_status = Column(String(255))  # TODO(vish): enum
     migration_status = Column(String(255))
-    replica_id = Column(String(36), ForeignKey('volumes.id'))
 
     scheduled_at = Column(DateTime)
     launched_at = Column(DateTime)
@@ -123,6 +122,12 @@ class Volume(BASE, CinderBase):
 
     deleted = Column(Boolean, default=False)
     bootable = Column(Boolean, default=False)
+    replication = relationship(ReplicationRelationship,
+                  foreign_keys=[primary_id, secondary_id],
+                  primaryjoin='or_('
+                  'ReplicationRelationship.primary_id == Volume.id,'
+                  'ReplicationRelationship.secondary_id == Volume.id,'
+                  'Replication.deleted == False)')
 
 
 class VolumeMetadata(BASE, CinderBase):
@@ -470,6 +475,20 @@ class Transfer(BASE, CinderBase):
                           'Transfer.deleted == False)')
 
 
+class ReplicationRelationship(BASE, CinderBase):
+    """Represents a replication relationship between two volumes."""
+    __tablename__ = 'replication_relationships'
+    id = Column(String(36), primary_key=True)
+    primary_id = Column(String(36), ForeignKey('volumes.id'),
+                        nullable=False)
+    secondary_id = Column(String(36), ForeignKey('volumes.id'),
+                          nullable=False)
+    status = Column(Enum('error', 'starting', 'copying', 'active',
+                         'stopping', 'deleting'))
+    extended_status = Column(String(255))
+    deleted = Column(Boolean, default=False)
+
+
 def register_models():
     """Register Models and create metadata.
 
@@ -488,6 +507,7 @@ def register_models():
               VolumeTypeExtraSpecs,
               VolumeTypes,
               VolumeGlanceMetadata,
+              ReplicationRelationship,
               )
     engine = create_engine(CONF.database.connection, echo=False)
     for model in models:
