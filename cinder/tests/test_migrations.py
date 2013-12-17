@@ -1076,8 +1076,8 @@ class TestMigrations(test.TestCase):
 
             migration_api.upgrade(engine, TestMigrations.REPOSITORY, 23)
 
-            self.assertTrue(engine.dialect.has_table(engine.connect(),
-                'replication_relationships'))
+            self.assertTrue(engine.dialect.has_table(
+                engine.connect(), 'replication_relationships'))
             relationships = sqlalchemy.Table('replication_relationships',
                                              metadata,
                                              autoload=True)
@@ -1103,5 +1103,5 @@ class TestMigrations(test.TestCase):
 
             migration_api.downgrade(engine, TestMigrations.REPOSITORY, 22)
 
-            self.assertFalse(engine.dialect.has_table(engine.connect(),
-                'replication_relationships'))
+            self.assertFalse(engine.dialect.has_table(
+                engine.connect(), 'replication_relationships'))

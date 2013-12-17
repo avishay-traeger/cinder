@@ -826,29 +826,30 @@ def transfer_accept(context, transfer_id, user_id, project_id):
 
 def replication_relationship_get(context, relationship_id):
     """Get a volume replication relationship by its ID."""
-    IMPL.replication_relationship_get(context, relationship_id)
+    return IMPL.replication_relationship_get(context, relationship_id)
 
 
 def replication_relationship_get_by_volume_id(context, volume_id):
     """Get a volume replication relationship by the ID of either volume."""
-    IMPL.replication_relationship_get_by_volume_id(context, volume_id)
+    return IMPL.replication_relationship_get_by_volume_id(context, volume_id)
 
 
 def replication_relationship_get_all(context):
     """Get all volume replication relationships."""
-    IMPL.replication_relationship_get_all(context)
+    return IMPL.replication_relationship_get_all(context)
 
 
 def replication_relationship_create(context, values):
     """Create a replication relationship between two volumes."""
-    IMPL.replication_relationship_create(context, values)
+    return IMPL.replication_relationship_create(context, values)
 
 
 def replication_relationship_update(context, relationship_id, values):
     """Update a replication relationship."""
-    IMPL.replication_relationship_update(context, relationship_id, values)
+    return IMPL.replication_relationship_update(context, relationship_id,
+                                                values)
 
 
 def replication_relationship_destroy(context, relationship_id):
     """Destroy a replication relationship record."""
-    IMPL.replication_relationship_destroy(context, relationship_id)
+    return IMPL.replication_relationship_destroy(context, relationship_id)

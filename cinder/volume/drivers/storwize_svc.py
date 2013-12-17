@@ -1569,29 +1569,25 @@ class StorwizeSVCDriver(san.SanDriver):
                   {'id': volume['id'], 'host': host['host']})
         return (True, None)
 
-    def create_replica(self, ctxt, replica):
-        volume_id = replica['replica_id']
-        volume = self.db.volume_get(ctxt, volume_id)
-        opts = self._get_vdisk_params(volume['volume_type_id'])
+    def create_replica(self, ctxt, primary, secondary):
+        opts = self._get_vdisk_params(primary['volume_type_id'])
         pool = self.configuration.storwize_svc_volpool_name
-        self._add_vdisk_copy(volume, pool, opts)
-        model_update = {'name_id': volume_id}
+        self._add_vdisk_copy(primary, pool, opts)
+        model_update = {'name_id': primary['id']}
         return model_update
 
-    def enable_replica(self, ctxt, replica):
+    def enable_replica(self, ctxt, primary, secondary):
         pass
 
-    def delete_replica(self, ctxt, replica):
-        volume_id = replica['replica_id']
-        volume = self.db.volume_get(ctxt, volume_id)
+    def delete_replica(self, ctxt, primary, secondary):
         this_pool = self.configuration.storwize_svc_volpool_name
-        copy_id = self._find_vdisk_copy_id(this_pool, volume['name'])
+        copy_id = self._find_vdisk_copy_id(this_pool, primary['name'])
         if copy_id is None:
             LOG.info(_('Could not find replica to delete of volume %(vol)s in '
                        'pool %(pool)s') %
-                     {'vol': volume_id, 'pool': this_pool})
+                     {'vol': primary['id'], 'pool': this_pool})
             return
-        self._remove_vdisk_copy(volume, copy_id)
+        self._remove_vdisk_copy(primary, copy_id)
 
     """====================================================================="""
     """ MISC/HELPERS                                                        """

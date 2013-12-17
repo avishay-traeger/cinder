@@ -996,28 +996,30 @@ class VolumeManager(manager.SchedulerDependentManager):
             extra_usage_info={'size': int(new_size)})
 
     @utils.require_driver_initialized
-    def create_replica(self, context, replica_id):
+    def create_replica(self, context, primary_id, secondary_id):
         """Creates a replica of a volume."""
-        replica = self.db.volume_get(context, replica_id)
-        msg_dict = {'vol': replica['replica_id'], 'rep': replica_id}
+        primary = self.db.volume_get(context, primary_id)
+        secondary = self.db.volume_get(context, secondary_id)
+        msg_dict = {'vol': primary_id, 'rep': secondary_id}
         try:
             LOG.info(_('volume %(vol)s: creating replica %(rep)s') % msg_dict)
-            model_update = self.driver.create_replica(context, replica)
+            model_update = self.driver.create_replica(context, primary,
+                                                      secondary)
             LOG.info(_('volume %(vol)s: successfully created replica %(rep)s')
                      % msg_dict)
         except Exception:
             with excutils.save_and_reraise_exception():
                 LOG.exception(_('volume %(vol)s: error creating replica '
                                 '%(rep)s') % msg_dict)
-                self.db.volume_update(context, replica_id,
+                self.db.volume_update(context, secondary_id,
                                       {'status': 'error'})
         if model_update is None:
             model_update = {}
-        model_update.update({'status': 'replica_created'})
+        model_update.update({'status': 'available'})
         try:
-            self.db.volume_update(context, replica_id, model_update)
+            self.db.volume_update(context, secondary_id, model_update)
         except Exception:
             with excutils.save_and_reraise_exception():
                 LOG.exception(_('volume %(vol)s: error updating model for '
                                 'replica %(rep)s') % msg_dict)
-                self.driver.delete_replica(context, replica_id)
+                self.driver.delete_replica(context, primary, secondary)

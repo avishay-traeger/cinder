@@ -167,7 +167,6 @@ class FilterScheduler(driver.Scheduler):
                                                  replica=replica_vol)
         self._post_select_populate_filter_properties(filter_properties,
                                                      weighed_host.obj)
-        LOG.error('AVISHAY1: ' + str(updated_volume['replication']))
 
         # context is not serializable
         filter_properties.pop('context', None)

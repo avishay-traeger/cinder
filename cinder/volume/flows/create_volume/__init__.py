@@ -1473,6 +1473,9 @@ class SendCreateVolumeReplicaRPC(base.CinderTask):
 
     Reversion strategy: N/A
     """
+
+    default_provides = set(['replication_relationship'])
+
     def __init__(self, db):
         super(SendCreateVolumeReplicaRPC, self).__init__(addons=[ACTION],
                                                          requires=['volume'])
@@ -1480,33 +1483,40 @@ class SendCreateVolumeReplicaRPC(base.CinderTask):
         self.rpcapi = volume_rpcapi.VolumeAPI()
 
     def execute(self, context, volume):
-        replica_id = volume.get('replica_id')
-        if not replica_id:
-            return
-
+        # If this is not a replicated volume, return immediately
         try:
-            replica = self.db.volume_get(context, replica_id)
-        except exception.CinderException as ex:
+            relationship = self.db.replication_relationship_get_by_volume_id(
+                    context, volume['id'])
+        except exception.VolReplicationRelationshipNotFound:
+            return None
+
+        secondary_id = relationship['secondary_id']
+        try:
+            secondary = self.db.volume_get(context, secondary_id)
+        except exception.CinderException:
             with excutils.save_and_reraise_exception():
-                LOG.exception(_("Failed fetching replica %(replica_id)s of "
+                LOG.exception(_("Failed fetching replica %(secondary_id)s of "
                                 "volume %(volume_id)s") %
-                              {'replica_id': replica_id,
+                              {'secondary_id': secondary_id,
                                'volume_id': volume['id']})
 
         try:
-            self.rpcapi.create_replica(context, replica)
-        except exception.CinderException as ex:
+            self.rpcapi.create_replica(context, volume, secondary)
+        except exception.CinderException:
             with excutils.save_and_reraise_exception():
                 LOG.exception(_("Failed to create replica of volume %s") %
                               volume['id'])
+        LOG.error('AVISHAY: RETURNING ' + str(relationship))
+        return relationship
 
     def revert(self, context, result, flow_failures, **kwargs):
         if isinstance(result, misc.Failure):
             return
 
         # Set the volume status to 'error'.
-        volume_id = kwargs['volume_id']
-        _error_out_volume(context, self.db, volume_id)
+        cause = list(flow_failures.values())[0]
+        volume_id = kwargs['volume']['id']
+        _error_out_volume(context, self.db, volume_id, str(cause))
 
 
 class EnableVolumeReplica(base.CinderTask):
@@ -1515,29 +1525,32 @@ class EnableVolumeReplica(base.CinderTask):
     Reversion strategy: N/A
     """
     def __init__(self, db, driver):
-        super(SendCreateVolumeReplicaRPC, self).__init__(addons=[ACTION],
-                                                         requires=['volume'])
+        super(EnableVolumeReplica, self).__init__(
+            addons=[ACTION], requires=['volume','replication_relationship'])
         self.db = db
         self.driver = driver
 
-    def execute(self, context, volume):
-        replica_id = volume['replica_id']
-        replica = self.db.volume_get(context, replica_id)
-        msg_dict = {'vol': volume['id'], 'rep': replica_id}
+    def execute(self, context, volume, replication_relationship):
+        if replication_relationship is None:
+            return
+        secondary_id = replication_relationship['secondary_id']
+        secondary = self.db.volume_get(context, secondary_id)
+        msg_dict = {'vol': volume['id'], 'rep': secondary_id}
         try:
             LOG.info(_('volume %(vol)s: enabling replica %(rep)s') % msg_dict)
-            model_update = self.driver.enable_replica(context, replica)
+            model_update = self.driver.enable_replica(context, volume,
+                                                      secondary)
             LOG.info(_('volume %(vol)s: successfully enabled replica %(rep)s')
                      % msg_dict)
             if model_update:
-                self.db.volume_update(context, replica_id, model_update)
+                self.db.volume_update(context, secondary_id, model_update)
         except Exception:
             with excutils.save_and_reraise_exception():
                 LOG.exception(_('volume %(vol)s: error enabling replica '
                                 '%(rep)s') % msg_dict)
                 self.db.volume_update(context, volume['id'],
                                       {'status': 'error'})
-                self.db.volume_update(context, replica_id,
+                self.db.volume_update(context, secondary_id,
                                       {'status': 'error'})
 
 
@@ -1752,7 +1765,7 @@ def get_manager_flow(context, db, driver, scheduler_rpcapi, host, volume_id,
                     NotifyVolumeActionTask(db, host, "create.start"),
                     CreateVolumeFromSpecTask(db, host, driver),
                     SendCreateVolumeReplicaRPC(db),
-                    #EnableVolumeReplica(db, driver),
+                    EnableVolumeReplica(db, driver),
                     CreateVolumeOnFinishTask(db, host, "create.end"))
 
     # Now load (but do not run) the flow using the provided initial data.
