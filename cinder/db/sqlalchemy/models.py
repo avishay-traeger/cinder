@@ -122,12 +122,6 @@ class Volume(BASE, CinderBase):
 
     deleted = Column(Boolean, default=False)
     bootable = Column(Boolean, default=False)
-    replication = relationship(ReplicationRelationship,
-                  foreign_keys=[primary_id, secondary_id],
-                  primaryjoin='or_('
-                  'ReplicationRelationship.primary_id == Volume.id,'
-                  'ReplicationRelationship.secondary_id == Volume.id,'
-                  'Replication.deleted == False)')
 
 
 class VolumeMetadata(BASE, CinderBase):
@@ -487,6 +481,14 @@ class ReplicationRelationship(BASE, CinderBase):
                          'stopping', 'deleting'))
     extended_status = Column(String(255))
     deleted = Column(Boolean, default=False)
+    volumes = relationship(Volume, backref='replication',
+                           foreign_keys=[primary_id, secondary_id],
+                           primaryjoin='and_(or_('
+                           'ReplicationRelationship.primary_id == '
+                           'Volume.id,'
+                           'ReplicationRelationship.secondary_id == '
+                           'Volume.id),'
+                           'ReplicationRelationship.deleted == False)')
 
 
 def register_models():

@@ -1065,7 +1065,7 @@ class TestMigrations(test.TestCase):
             self.assertNotIn('disabled_reason', services.c)
 
     def test_migration_023(self):
-        """Test that adding provider_geometry column works correctly."""
+        """Test that adding replication relationships table works correctly."""
         for (key, engine) in self.engines.items():
             migration_api.version_control(engine,
                                           TestMigrations.REPOSITORY,
@@ -1075,17 +1075,33 @@ class TestMigrations(test.TestCase):
             metadata.bind = engine
 
             migration_api.upgrade(engine, TestMigrations.REPOSITORY, 23)
-            volumes = sqlalchemy.Table('volumes',
-                                       metadata,
-                                       autoload=True)
-            self.assertIsInstance(volumes.c.replica_id.type,
+
+            self.assertTrue(engine.dialect.has_table(engine.connect(),
+                'replication_relationships'))
+            relationships = sqlalchemy.Table('replication_relationships',
+                                             metadata,
+                                             autoload=True)
+
+            self.assertIsInstance(relationships.c.created_at.type,
+                                  sqlalchemy.types.DATETIME)
+            self.assertIsInstance(relationships.c.updated_at.type,
+                                  sqlalchemy.types.DATETIME)
+            self.assertIsInstance(relationships.c.deleted_at.type,
+                                  sqlalchemy.types.DATETIME)
+            self.assertIsInstance(relationships.c.deleted.type,
+                                  sqlalchemy.types.BOOLEAN)
+            self.assertIsInstance(relationships.c.id.type,
+                                  sqlalchemy.types.VARCHAR)
+            self.assertIsInstance(relationships.c.primary_id.type,
+                                  sqlalchemy.types.VARCHAR)
+            self.assertIsInstance(relationships.c.secondary_id.type,
+                                  sqlalchemy.types.VARCHAR)
+            self.assertIsInstance(relationships.c.status.type,
+                                  sqlalchemy.types.VARCHAR)
+            self.assertIsInstance(relationships.c.extended_status.type,
                                   sqlalchemy.types.VARCHAR)
 
             migration_api.downgrade(engine, TestMigrations.REPOSITORY, 22)
-            metadata = sqlalchemy.schema.MetaData()
-            metadata.bind = engine
 
-            volumes = sqlalchemy.Table('volumes',
-                                       metadata,
-                                       autoload=True)
-            self.assertNotIn('replica_id', volumes.c)
+            self.assertFalse(engine.dialect.has_table(engine.connect(),
+                'replication_relationships'))

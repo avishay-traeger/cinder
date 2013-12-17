@@ -1125,14 +1125,12 @@ def _volume_get_query(context, session=None, project_only=False):
                            project_only=project_only).\
             options(joinedload('volume_metadata')).\
             options(joinedload('volume_admin_metadata')).\
-            options(joinedload('volume_type')).\
-            options(joinedload('replication'))
+            options(joinedload('volume_type'))
     else:
         return model_query(context, models.Volume, session=session,
                            project_only=project_only).\
             options(joinedload('volume_metadata')).\
-            options(joinedload('volume_type')).\
-            options(joinedload('replication'))
+            options(joinedload('volume_type'))
 
 
 @require_context

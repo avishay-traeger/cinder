@@ -25,7 +25,7 @@ def upgrade(migrate_engine):
     meta.bind = migrate_engine
 
     replication = Table(
-        'replication', meta,
+        'replication_relationships', meta,
         Column('created_at', DateTime(timezone=False)),
         Column('updated_at', DateTime(timezone=False)),
         Column('deleted_at', DateTime(timezone=False)),
@@ -33,8 +33,8 @@ def upgrade(migrate_engine):
         Column('id', String(36), primary_key=True, nullable=False),
         Column('primary_id', String(36)),
         Column('secondary_id', String(36)),
-        Column('mirror_status', Enum('error', 'starting', 'copying',
-                                     'active', 'stopping', 'deleting')),
+        Column('status', Enum('error', 'starting', 'copying',
+                              'active', 'stopping', 'deleting')),
         Column('extended_status', String(255)),
         mysql_engine='InnoDB',
         mysql_charset='utf8'
@@ -50,10 +50,10 @@ def upgrade(migrate_engine):
 def downgrade(migrate_engine):
     meta = MetaData()
     meta.bind = migrate_engine
-    replication = Table('replication',
+    replication = Table('replication_relationships',
                         meta,
                         autoload=True)
     try:
         replication.drop()
     except Exception:
-        LOG.error(_("replication table not dropped"))
+        LOG.error(_("replication relationships table not dropped"))
