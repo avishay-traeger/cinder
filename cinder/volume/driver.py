@@ -480,6 +480,9 @@ class VolumeDriver(object):
         msg = _("enable_replica not implemented")
         raise NotImplementedError(msg)
 
+    def replica_status_check(relationship):
+        return None
+
     def disable_replica(self, context, primary, secondary, relationship):
         msg = _("disable_replica not implemented")
         raise NotImplementedError(msg)

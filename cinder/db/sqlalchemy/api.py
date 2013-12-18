@@ -2683,31 +2683,37 @@ def transfer_accept(context, transfer_id, user_id, project_id):
 
 
 @require_context
+def _rep_relationship_get_query(context, session=None, project_only=False):
+    return model_query(context, models.ReplicationRelationship,
+                       session=session, project_only=project_only).\
+        options(joinedload('volumes'))
+
+@require_context
 def replication_relationship_get(context, relationship_id):
-    result = model_query(context, models.ReplicationRelationship,
-                         project_only=True).\
+    result = _rep_relationship_get_query(context, project_only=True).\
         filter_by(id=relationship_id).\
         first()
-
     if not result:
         raise exception.ReplicationRelationshipNotFound(
             replication_relationship_id=relationship_id)
-
     return result
 
 
 @require_context
 def replication_relationship_get_by_volume_id(context, volume_id):
-    result = model_query(context, models.ReplicationRelationship,
-                         project_only=True).\
+    result = _rep_relationship_get_query(context, project_only=True).\
         filter(or_(models.ReplicationRelationship.primary_id == volume_id,
                    models.ReplicationRelationship.secondary_id == volume_id)).\
         first()
-
     if not result:
         raise exception.VolReplicationRelationshipNotFound(volume_id=volume_id)
-
     return result
+
+
+@require_admin_context
+def replication_relationship_get_by_host(context, host):
+    return _rep_relationship_get_query(context, project_only=False).\
+        filter_by(host=host).all()
 
 
 @require_admin_context

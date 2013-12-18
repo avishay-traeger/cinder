@@ -1009,6 +1009,11 @@ class VolumeManager(manager.SchedulerDependentManager):
         """Creates a replica of a volume."""
         relationship = self.db.replication_relationship_get(context,
                                                             relationship_id)
+        LOG.error('AVISHAY CREATE_REPLICA: ' + str(relationship))
+        LOG.error('AVISHAY CREATE_REPLICA: ' + str(relationship['primary_id']))
+        LOG.error('AVISHAY CREATE_REPLICA: ' + str(relationship['secondary_id']))
+        LOG.error('AVISHAY CREATE_REPLICA: ' + str(relationship['volumes']))
+        LOG.error('AVISHAY CREATE_REPLICA: ' + str(relationship['volumes']['id']))
         primary_id = relationship['primary_id']
         secondary_id = relationship['secondary_id']
         primary = self.db.volume_get(context, primary_id)
@@ -1060,3 +1065,25 @@ class VolumeManager(manager.SchedulerDependentManager):
                                 '%(rep)s') % msg_dict)
                 self.db.volume_update(context, secondary_id,
                                       {'status': 'error'})
+
+    def _update_replication_relationship_status(self, context):
+        LOG.info(_("Updating replication relationship status"))
+        if not self.driver.initialized:
+            if self.driver.configuration.config_group is None:
+                config_group = ''
+            else:
+                config_group = ('(config name %s)' %
+                                self.driver.configuration.config_group)
+
+            LOG.warning(_('Unable to update replication relationship status, '
+                          '%(driver_name)s -%(driver_version)s '
+                          '%(config_group)s driver is uninitialized.') %
+                        {'driver_name': self.driver.__class__.__name__,
+                         'driver_version': self.driver.get_version(),
+                         'config_group': config_group})
+        else:
+            relationships = self.db.replication_relationship_get_by_host(
+                context, self.host)
+            LOG.error("AVISHAY " + str(relationships))
+            #updates = self.driver.NEED DB GET BY HOST
+            #if updates:

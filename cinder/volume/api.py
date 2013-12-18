@@ -469,6 +469,11 @@ class API(base.Base):
             msg = _("Snapshot cannot be created while volume is migrating")
             raise exception.InvalidVolume(reason=msg)
 
+        if volume['status'].startswith('replica_'):
+            # Can't snapshot secondary replica
+            msg = _("Snapshot of secondary replica is not allowed.")
+            raise exception.InvalidVolume(reason=msg)
+
         if ((not force) and (volume['status'] != "available")):
             msg = _("must be available")
             raise exception.InvalidVolume(reason=msg)
