@@ -473,6 +473,7 @@ class ReplicationRelationship(BASE, CinderBase):
     """Represents a replication relationship between two volumes."""
     __tablename__ = 'replication_relationships'
     id = Column(String(36), primary_key=True)
+    deleted = Column(Boolean, default=False)
     primary_id = Column(String(36), ForeignKey('volumes.id'),
                         nullable=False)
     secondary_id = Column(String(36), ForeignKey('volumes.id'),
@@ -480,15 +481,13 @@ class ReplicationRelationship(BASE, CinderBase):
     status = Column(Enum('error', 'starting', 'copying', 'active',
                          'stopping', 'deleting'))
     extended_status = Column(String(255))
-    deleted = Column(Boolean, default=False)
-    volumes = relationship(Volume, backref='replication',
-                           foreign_keys=[primary_id, secondary_id],
-                           primaryjoin='and_(or_('
-                           'ReplicationRelationship.primary_id == '
-                           'Volume.id,'
-                           'ReplicationRelationship.secondary_id == '
-                           'Volume.id),'
-                           'ReplicationRelationship.deleted == False)')
+    driver_data = Column(String(255))
+    primary_volume = relationship(Volume, foreign_keys=primary_id,
+                                  primaryjoin='ReplicationRelationship.'
+                                  'primary_id == Volume.id')
+    secondary_volume = relationship(Volume, foreign_keys=secondary_id,
+                                    primaryjoin='ReplicationRelationship.'
+                                    'secondary_id == Volume.id')
 
 
 def register_models():

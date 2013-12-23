@@ -2686,7 +2686,9 @@ def transfer_accept(context, transfer_id, user_id, project_id):
 def _rep_relationship_get_query(context, session=None, project_only=False):
     return model_query(context, models.ReplicationRelationship,
                        session=session, project_only=project_only).\
-        options(joinedload('volumes'))
+        options(joinedload('primary_volume')).\
+        options(joinedload('secondary_volume'))
+
 
 @require_context
 def replication_relationship_get(context, relationship_id):
@@ -2713,7 +2715,8 @@ def replication_relationship_get_by_volume_id(context, volume_id):
 @require_admin_context
 def replication_relationship_get_by_host(context, host):
     return _rep_relationship_get_query(context, project_only=False).\
-        filter_by(host=host).all()
+        filter(models.ReplicationRelationship.primary_volume.has(host=host)).\
+        all()
 
 
 @require_admin_context

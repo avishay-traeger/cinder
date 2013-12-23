@@ -1489,17 +1489,21 @@ class StorwizeSVCDriver(san.SanDriver):
         copy_id = match_obj.group(2)
         return copy_id
 
+    def _get_vdisk_copy_attrs(self, volume, copy_id):
+        ssh_cmd = ['svcinfo', 'lsvdiskcopy', '-delim', '!', '-copy',
+                   copy_id, volume['name']]
+        attrs = self._execute_command_and_parse_attributes(ssh_cmd)
+        if not attrs:
+            msg = (_('_get_vdisk_copy_attrs: Could not get vdisk '
+                     'copy data'))
+            LOG.error(msg)
+            raise exception.VolumeBackendAPIException(data=msg)
+        return attrs
+
     def _wait_for_vdisk_copy_sync(self, volume, copy_id):
         sync = False
         while not sync:
-            ssh_cmd = ['svcinfo', 'lsvdiskcopy', '-delim', '!', '-copy',
-                       copy_id, volume['name']]
-            attrs = self._execute_command_and_parse_attributes(ssh_cmd)
-            if not attrs:
-                msg = (_('_wait_for_vdisk_copy_sync: Could not get vdisk '
-                         'copy data'))
-                LOG.error(msg)
-                raise exception.VolumeBackendAPIException(data=msg)
+            attrs = self._get_vdisk_copy_attrs(volume, copy_id)
             if attrs['sync'] == 'yes':
                 sync = True
             else:
@@ -1569,20 +1573,25 @@ class StorwizeSVCDriver(san.SanDriver):
                   {'id': volume['id'], 'host': host['host']})
         return (True, None)
 
-    def create_replica(self, ctxt, primary, secondary, relationship):
+    def create_replica(self, ctxt, relationship):
+        primary = relationship['primary_volume']
         opts = self._get_vdisk_params(primary['volume_type_id'])
         pool = self.configuration.storwize_svc_volpool_name
         self._add_vdisk_copy(primary, pool, opts)
-        model_update = {'name_id': primary['id']}
+        model_update = {'name_id': primary['id'], 'driver_data': '!%s' % pool}
         return model_update
 
-    def enable_replica(self, ctxt, primary, secondary, relationship):
+    def enable_replica(self, ctxt, relationship):
+        pool = self.configuration.storwize_svc_volpool_name
+        data = relationship['driver_data'].split('!')
+        updated = pool + '!' + data[1]
+        return {'driver_data': updated}
+
+    def disable_replica(self, ctxt, relationship):
         pass
 
-    def disable_replica(self, ctxt, primary, secondary, relationship):
-        pass
-
-    def delete_replica(self, ctxt, primary, secondary, relationship):
+    def delete_replica(self, ctxt, relationship):
+        primary = relationship['primary_volume']
         this_pool = self.configuration.storwize_svc_volpool_name
         copy_id = self._find_vdisk_copy_id(this_pool, primary['name'])
         if copy_id is None:
@@ -1591,6 +1600,44 @@ class StorwizeSVCDriver(san.SanDriver):
                      {'vol': primary['id'], 'pool': this_pool})
             return
         self._remove_vdisk_copy(primary, copy_id)
+
+    def replication_status_check(self, ctxt, relationship):
+        def _check_copy_ok(volume, pool, copy_type):
+            try:
+                copy_id = self._find_vdisk_copy_id(pool, volume['name'])
+                attrs = self._get_vdisk_copy_attrs(volume, copy_id)
+            except exception.VolumeBackendAPIException:
+                extended = ('Failed to find ' + copy_type +
+                            ' copy in pool ' + pool + '.')
+                return ('error', extended)
+            if attrs['status'] != 'online':
+                extended = 'The ' + copy_type + ' copy is offline'
+                return ('error', extended)
+            if copy_type == 'secondary':
+                if attrs['sync'] != 'yes':
+                    return ('active', None)
+                else:
+                    return ('copying', None)
+            return (None, None)
+
+        if not isinstance(relationship['driver_data'], basestring):
+            return {'status': 'error',
+                    'extended_status': 'Driver data not properly set.'}
+        pools = relationship['driver_data'].split('!')
+        if len(pools) != 2:
+            return {'status': 'error',
+                    'extended_status': 'Driver data not properly set.'}
+        primary = relationship['primary_volume']
+        curr_status = relationship['status']
+        curr_extended = relationship['extended_status']
+        status, extended = _check_copy_ok(primary, pools[0], 'primary')
+        if status == 'error':
+            if status != curr_status or extended != curr_extended:
+                return {'status': status, 'extened_status': extended}
+        status, extended = _check_copy_ok(primary, pools[1], 'secondary')
+        if status != curr_status or extended != curr_extended:
+            return {'status': status, 'extened_status': extended}
+        return None
 
     """====================================================================="""
     """ MISC/HELPERS                                                        """

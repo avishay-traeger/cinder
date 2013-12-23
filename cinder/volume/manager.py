@@ -367,7 +367,7 @@ class VolumeManager(manager.SchedulerDependentManager):
         try:
             LOG.debug(_("volume %s: removing export"), volume_ref['id'])
             self.driver.remove_export(context, volume_ref)
-            if volume_ref['replication']:
+            try:
                 relation = self.db.replication_relationship_get_by_volume_id(
                     context, volume_id)
                 secondary = self.db.volume_get(context,
@@ -376,6 +376,8 @@ class VolumeManager(manager.SchedulerDependentManager):
                                             relation)
                 rpcapi = volume_rpcapi.VolumeAPI()
                 rpcapi.delete_replica(context, secondary, relation)
+            except exception.VolReplicationRelationshipNotFound:
+                pass
             LOG.debug(_("volume %s: deleting"), volume_ref['id'])
             self.driver.delete_volume(volume_ref)
         except exception.VolumeIsBusy:
@@ -1009,63 +1011,59 @@ class VolumeManager(manager.SchedulerDependentManager):
         """Creates a replica of a volume."""
         relationship = self.db.replication_relationship_get(context,
                                                             relationship_id)
-        LOG.error('AVISHAY CREATE_REPLICA: ' + str(relationship))
-        LOG.error('AVISHAY CREATE_REPLICA: ' + str(relationship['primary_id']))
-        LOG.error('AVISHAY CREATE_REPLICA: ' + str(relationship['secondary_id']))
-        LOG.error('AVISHAY CREATE_REPLICA: ' + str(relationship['volumes']))
-        LOG.error('AVISHAY CREATE_REPLICA: ' + str(relationship['volumes']['id']))
-        primary_id = relationship['primary_id']
-        secondary_id = relationship['secondary_id']
-        primary = self.db.volume_get(context, primary_id)
-        secondary = self.db.volume_get(context, secondary_id)
-        msg_dict = {'vol': primary_id, 'rep': secondary_id}
+        msg_dict = {'vol': relationship['primary_id'],
+                    'rep': relationship['secondary_id']}
         try:
             LOG.info(_('volume %(vol)s: creating replica %(rep)s') % msg_dict)
-            model_update = self.driver.create_replica(context, primary,
-                                                      secondary, relationship)
+            model_update = self.driver.create_replica(context, relationship)
             LOG.info(_('volume %(vol)s: successfully created replica %(rep)s')
                      % msg_dict)
         except Exception:
             with excutils.save_and_reraise_exception():
                 LOG.exception(_('volume %(vol)s: error creating replica '
                                 '%(rep)s') % msg_dict)
-                self.db.volume_update(context, secondary_id,
+                self.db.volume_update(context, relationship['secondary_id'],
                                       {'status': 'error'})
+                update = {'status': 'error',
+                          'extended_status': 'Failed to create copy.'}
+                self.db.replication_relationship_update(context,
+                                                        relationship['id'],
+                                                        update)
         if model_update is None:
             model_update = {}
         model_update.update({'status': 'replica_available'})
         try:
-            self.db.volume_update(context, secondary_id, model_update)
+            self.db.volume_update(context, relationship['secondary_id'],
+                                  model_update)
+            self.db.replication_relationship_update(context,
+                                                    relationship['id'],
+                                                    {'status': 'copying'})
         except Exception:
             with excutils.save_and_reraise_exception():
                 LOG.exception(_('volume %(vol)s: error updating model for '
                                 'replica %(rep)s') % msg_dict)
-                self.driver.delete_replica(context, primary, secondary)
 
     @utils.require_driver_initialized
     def delete_replica(self, context, relationship_id):
         """Deletes a replica of a volume."""
         relationship = self.db.replication_relationship_get(context,
                                                             relationship_id)
-        primary_id = relationship['primary_id']
-        secondary_id = relationship['secondary_id']
-        primary = self.db.volume_get(context, primary_id)
-        secondary = self.db.volume_get(context, secondary_id)
-        msg_dict = {'vol': primary_id, 'rep': secondary_id}
+        msg_dict = {'vol': relationship['primary_id'],
+                    'rep': relationship['secondary_id']}
         try:
             LOG.info(_('volume %(vol)s: deleting replica %(rep)s') % msg_dict)
-            self.driver.delete_replica(context, primary, secondary,
-                                       relationship)
-            self.db.volume_destroy(context, secondary)
+            self.driver.delete_replica(context, relationship)
+            self.db.volume_destroy(context, relationship['secondary_id'])
             LOG.info(_('volume %(vol)s: successfully deleted replica %(rep)s')
                      % msg_dict)
         except Exception:
             with excutils.save_and_reraise_exception():
                 LOG.exception(_('volume %(vol)s: error deleting replica '
                                 '%(rep)s') % msg_dict)
-                self.db.volume_update(context, secondary_id,
+                self.db.volume_update(context, relationship['secondary_id'],
                                       {'status': 'error'})
 
+    @periodic_task.periodic_task
     def _update_replication_relationship_status(self, context):
         LOG.info(_("Updating replication relationship status"))
         if not self.driver.initialized:
@@ -1082,8 +1080,13 @@ class VolumeManager(manager.SchedulerDependentManager):
                          'driver_version': self.driver.get_version(),
                          'config_group': config_group})
         else:
-            relationships = self.db.replication_relationship_get_by_host(
-                context, self.host)
-            LOG.error("AVISHAY " + str(relationships))
-            #updates = self.driver.NEED DB GET BY HOST
-            #if updates:
+            rels = self.db.replication_relationship_get_by_host(context,
+                                                                self.host)
+            for relationship in rels:
+                LOG.error('AVISHAY: ' + str(relationship['extended_status']))
+                model_update = self.driver.replication_status_check(
+                    context, relationship)
+                if model_update:
+                    self.db.replication_relationship_update(context,
+                                                            relationship['id'],
+                                                            model_update)

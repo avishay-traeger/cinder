@@ -24,18 +24,23 @@ def upgrade(migrate_engine):
     meta = MetaData()
     meta.bind = migrate_engine
 
+    _volumes = Table('volumes', meta, autoload=True)
+
     replication = Table(
         'replication_relationships', meta,
         Column('created_at', DateTime(timezone=False)),
         Column('updated_at', DateTime(timezone=False)),
         Column('deleted_at', DateTime(timezone=False)),
-        Column('deleted', Boolean),
+        Column('deleted', Boolean, default=False),
         Column('id', String(36), primary_key=True, nullable=False),
-        Column('primary_id', String(36)),
-        Column('secondary_id', String(36)),
+        Column('primary_id', String(36), ForeignKey('volumes.id'),
+               nullable=False),
+        Column('secondary_id', String(36), ForeignKey('volumes.id'),
+               nullable=False),
         Column('status', Enum('error', 'starting', 'copying',
                               'active', 'stopping', 'deleting')),
         Column('extended_status', String(255)),
+        Column('driver_data', String(255)),
         mysql_engine='InnoDB',
         mysql_charset='utf8'
     )

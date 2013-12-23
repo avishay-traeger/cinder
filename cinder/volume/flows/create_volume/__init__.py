@@ -1532,25 +1532,23 @@ class EnableVolumeReplica(base.CinderTask):
     def execute(self, context, volume, replication_relationship):
         if replication_relationship is None:
             return
-        secondary_id = replication_relationship['secondary_id']
-        secondary = self.db.volume_get(context, secondary_id)
-        msg_dict = {'vol': volume['id'], 'rep': secondary_id}
+        secondary = replication_relationship['secondary_volume']
+        msg_dict = {'vol': volume['id'], 'rep': secondary['id']}
         try:
             LOG.info(_('volume %(vol)s: enabling replica %(rep)s') % msg_dict)
-            model_update = self.driver.enable_replica(context, volume,
-                                                      secondary,
+            model_update = self.driver.enable_replica(context,
                                                       replication_relationship)
             LOG.info(_('volume %(vol)s: successfully enabled replica %(rep)s')
                      % msg_dict)
             if model_update:
-                self.db.volume_update(context, secondary_id, model_update)
+                self.db.volume_update(context, secondary['id'], model_update)
         except Exception:
             with excutils.save_and_reraise_exception():
                 LOG.exception(_('volume %(vol)s: error enabling replica '
                                 '%(rep)s') % msg_dict)
                 self.db.volume_update(context, volume['id'],
                                       {'status': 'error'})
-                self.db.volume_update(context, secondary_id,
+                self.db.volume_update(context, secondary['id'],
                                       {'status': 'error'})
 
 
