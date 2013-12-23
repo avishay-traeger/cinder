@@ -70,5 +70,9 @@
     "backup:delete": [],
     "backup:get": [],
     "backup:get_all": [],
-    "backup:restore": []
+    "backup:restore": [],
+
+    "replication:get": [[["rule:admin_api"]],
+    "replication:get_all": [[["rule:admin_api"]],
+    "replication:swap": [[["rule:admin_api"]]
 }

@@ -2691,7 +2691,7 @@ def _rep_relationship_get_query(context, session=None, project_only=False):
 
 
 @require_context
-def replication_relationship_get(context, relationship_id):
+def _replication_relationship_get(context, relationship_id):
     result = _rep_relationship_get_query(context, project_only=True).\
         filter_by(id=relationship_id).\
         first()
@@ -2699,6 +2699,11 @@ def replication_relationship_get(context, relationship_id):
         raise exception.ReplicationRelationshipNotFound(
             replication_relationship_id=relationship_id)
     return result
+
+
+@require_context
+def replication_relationship_get(context, relationship_id):
+    return _replication_relationship_get(context, relationship_id)
 
 
 @require_context
@@ -2720,8 +2725,24 @@ def replication_relationship_get_by_host(context, host):
 
 
 @require_admin_context
-def replication_relationship_get_all(context):
-    return model_query(context, models.ReplicationRelationship).all()
+def replication_relationship_get_all(context, marker, limit, sort_key,
+                                     sort_dir):
+    session = get_session()
+    with session.begin():
+        query = _rep_relationship_get_query(context, session=session)
+
+        marker_rel = None
+        if marker is not None:
+            marker_rel = _replication_relationship_get(context, marker,
+                                                       session=session)
+
+        query = sqlalchemyutils.paginate_query(query,
+                                               models.ReplicationRelationship,
+                                               limit,
+                                               [sort_key, 'created_at', 'id'],
+                                               marker=marker_volume,
+                                               sort_dir=sort_dir)
+        return query.all()
 
 
 @require_context
