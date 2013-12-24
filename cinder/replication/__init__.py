@@ -20,4 +20,5 @@ import cinder.openstack.common.importutils
 
 CONF = cfg.CONF
 
-API = cinder.openstack.common.importutils.import_class(CONF.replication_api_class)
+cls = CONF.replication_api_class
+API = cinder.openstack.common.importutils.import_class(cls)

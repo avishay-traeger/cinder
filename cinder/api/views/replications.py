@@ -36,40 +36,40 @@ class ViewBuilder(common.ViewBuilder):
         """Detailed view of a list of replications ."""
         return self._list_view(self.detail, request, replications)
 
-    def summary(self, request, replication):
-        """Generic, non-detailed view of a replication."""
+    def summary(self, request, relationship):
+        """Generic, non-detailed view of a relationship."""
         return {
-            'replication': {
-                'id': replication['id'],
-                'primary_id': replication.get('primary_id'),
-                'status': replication['status'],
+            'relationship': {
+                'id': relationship['id'],
+                'primary_id': relationship.get('primary_id'),
+                'status': relationship['status'],
                 'links': self._get_links(request,
-                                         replication['id']),
+                                         relationship['id']),
             },
         }
 
-    def detail(self, request, replication):
-        """Detailed view of a single replication."""
+    def detail(self, request, relationship):
+        """Detailed view of a single relationship."""
         return {
-            'replication': {
-                'id': replication['id'],
-                'primary_id': replication.get('primary_id'),
-                'secondary_id': replication.get('secondary_id'),
-                'status': replication['status'],
-                'extended_status': replication['extended_status'],
-                'links': self._get_links(request, replication['id']),
+            'relationship': {
+                'id': relationship['id'],
+                'primary_id': relationship.get('primary_id'),
+                'secondary_id': relationship.get('secondary_id'),
+                'status': relationship['status'],
+                'extended_status': relationship['extended_status'],
+                'links': self._get_links(request, relationship['id']),
             }
         }
 
-    def _list_view(self, func, request, replications):
-        """Provide a view for a list of replications."""
-        r_list = [func(request, replication)['replication'] for replication in
-                  replications]
-        r_links = self._get_collection_links(request, replications,
+    def _list_view(self, func, request, relationships):
+        """Provide a view for a list of relationships."""
+        r_list = [func(request, relationship)['relationship'] for relationship in
+                  relationships]
+        r_links = self._get_collection_links(request, relationships,
                                              self._collection_name)
-        r_dict = dict(replications=r_list)
+        r_dict = dict(relationships=r_list)
 
         if r_links:
-            r_dict['replications_links'] = r_links
+            r_dict['relationships_links'] = r_links
 
         return r_dict

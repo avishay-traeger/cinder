@@ -1015,7 +1015,8 @@ class VolumeManager(manager.SchedulerDependentManager):
                     'rep': relationship['secondary_id']}
         try:
             LOG.info(_('volume %(vol)s: creating replica %(rep)s') % msg_dict)
-            model_update = self.driver.create_replica(context, relationship)
+            vol_update, rel_update = self.driver.create_replica(context,
+                                                                relationship)
             LOG.info(_('volume %(vol)s: successfully created replica %(rep)s')
                      % msg_dict)
         except Exception:
@@ -1029,15 +1030,18 @@ class VolumeManager(manager.SchedulerDependentManager):
                 self.db.replication_relationship_update(context,
                                                         relationship['id'],
                                                         update)
-        if model_update is None:
-            model_update = {}
-        model_update.update({'status': 'replica_available'})
+        if vol_update is None:
+            vol_update = {}
+        vol_update.update({'status': 'replica_available'})
+        if rel_update is None:
+            rel_update = {}
+        rel_update.update({'status': 'copying'})
         try:
             self.db.volume_update(context, relationship['secondary_id'],
-                                  model_update)
+                                  vol_update)
             self.db.replication_relationship_update(context,
                                                     relationship['id'],
-                                                    {'status': 'copying'})
+                                                    rel_update)
         except Exception:
             with excutils.save_and_reraise_exception():
                 LOG.exception(_('volume %(vol)s: error updating model for '
@@ -1083,9 +1087,12 @@ class VolumeManager(manager.SchedulerDependentManager):
             rels = self.db.replication_relationship_get_by_host(context,
                                                                 self.host)
             for relationship in rels:
-                LOG.error('AVISHAY: ' + str(relationship['extended_status']))
-                model_update = self.driver.replication_status_check(
-                    context, relationship)
+                try:
+                    model_update = self.driver.replication_status_check(
+                        context, relationship)
+                except Exception as ex:
+                    LOG.error(_("Error checking replication status for "
+                                "relationship %s") % relationship['id'])
                 if model_update:
                     self.db.replication_relationship_update(context,
                                                             relationship['id'],

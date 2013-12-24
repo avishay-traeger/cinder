@@ -71,11 +71,11 @@ class API(base.Base):
             result = []
             not_found = object()
             for rel in rels:
-                for opt, values in filters.iteritems():
+                for opt, value in filters.iteritems():
                     if rel.get(opt, not_found) == value:
                         result.append(rel)
             rels = result
 
         return rels
 
-    def swap(self, context, relationship_id)
+    #def swap(self, context, relationship_id):

@@ -1578,14 +1578,15 @@ class StorwizeSVCDriver(san.SanDriver):
         opts = self._get_vdisk_params(primary['volume_type_id'])
         pool = self.configuration.storwize_svc_volpool_name
         self._add_vdisk_copy(primary, pool, opts)
-        model_update = {'name_id': primary['id'], 'driver_data': '!%s' % pool}
-        return model_update
+        vol_update = {'name_id': primary['id']}
+        rel_update = {'driver_data': '!%s' % pool}
+        return (vol_update, rel_update)
 
     def enable_replica(self, ctxt, relationship):
         pool = self.configuration.storwize_svc_volpool_name
         data = relationship['driver_data'].split('!')
         updated = pool + '!' + data[1]
-        return {'driver_data': updated}
+        return (None, {'driver_data': updated})
 
     def disable_replica(self, ctxt, relationship):
         pass
@@ -1614,17 +1615,22 @@ class StorwizeSVCDriver(san.SanDriver):
                 extended = 'The ' + copy_type + ' copy is offline'
                 return ('error', extended)
             if copy_type == 'secondary':
-                if attrs['sync'] != 'yes':
+                if attrs['sync'] == 'yes':
                     return ('active', None)
                 else:
                     return ('copying', None)
             return (None, None)
 
-        if not isinstance(relationship['driver_data'], basestring):
+        driver_data = relationship['driver_data']
+        if not isinstance(driver_data, basestring):
+            LOG.error(_('Got bad value in driver_data: %s') % driver_data)
             return {'status': 'error',
                     'extended_status': 'Driver data not properly set.'}
-        pools = relationship['driver_data'].split('!')
+        if driver_data is None:
+            return None
+        pools = driver_data.split('!')
         if len(pools) != 2:
+            LOG.error(_('Got bad value in driver_data: %s') % driver_data)
             return {'status': 'error',
                     'extended_status': 'Driver data not properly set.'}
         primary = relationship['primary_volume']
@@ -1634,6 +1640,7 @@ class StorwizeSVCDriver(san.SanDriver):
         if status == 'error':
             if status != curr_status or extended != curr_extended:
                 return {'status': status, 'extened_status': extended}
+            return None
         status, extended = _check_copy_ok(primary, pools[1], 'secondary')
         if status != curr_status or extended != curr_extended:
             return {'status': status, 'extened_status': extended}

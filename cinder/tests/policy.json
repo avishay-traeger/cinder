@@ -72,7 +72,7 @@
     "backup:get_all": [],
     "backup:restore": [],
 
-    "replication:get": [[["rule:admin_api"]],
-    "replication:get_all": [[["rule:admin_api"]],
-    "replication:swap": [[["rule:admin_api"]]
+    "replication:get": [["rule:admin_api"]],
+    "replication:get_all": [["rule:admin_api"]],
+    "replication:swap": [["rule:admin_api"]]
 }

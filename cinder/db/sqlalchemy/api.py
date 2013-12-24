@@ -2740,7 +2740,7 @@ def replication_relationship_get_all(context, marker, limit, sort_key,
                                                models.ReplicationRelationship,
                                                limit,
                                                [sort_key, 'created_at', 'id'],
-                                               marker=marker_volume,
+                                               marker=marker_rel,
                                                sort_dir=sort_dir)
         return query.all()
 

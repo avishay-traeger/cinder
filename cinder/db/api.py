@@ -838,9 +838,11 @@ def replication_relationship_get_by_host(context, host):
     return IMPL.replication_relationship_get_by_host(context, host)
 
 
-def replication_relationship_get_all(context):
+def replication_relationship_get_all(context, marker, limit, sort_key,
+                                     sort_dir):
     """Get all volume replication relationships."""
-    return IMPL.replication_relationship_get_all(context)
+    return IMPL.replication_relationship_get_all(context, marker, limit,
+                                                 sort_key, sort_dir)
 
 
 def replication_relationship_create(context, values):

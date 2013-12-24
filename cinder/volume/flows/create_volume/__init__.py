@@ -1506,7 +1506,8 @@ class SendCreateVolumeReplicaRPC(base.CinderTask):
             with excutils.save_and_reraise_exception():
                 LOG.exception(_("Failed to create replica of volume %s") %
                               volume['id'])
-        return relationship
+        return self.db.replication_relationship_get_by_volume_id(
+            context, volume['id'])
 
     def revert(self, context, result, flow_failures, **kwargs):
         if isinstance(result, misc.Failure):
@@ -1536,12 +1537,16 @@ class EnableVolumeReplica(base.CinderTask):
         msg_dict = {'vol': volume['id'], 'rep': secondary['id']}
         try:
             LOG.info(_('volume %(vol)s: enabling replica %(rep)s') % msg_dict)
-            model_update = self.driver.enable_replica(context,
-                                                      replication_relationship)
+            vol_update, rel_update = self.driver.enable_replica(
+                context, replication_relationship)
             LOG.info(_('volume %(vol)s: successfully enabled replica %(rep)s')
                      % msg_dict)
-            if model_update:
-                self.db.volume_update(context, secondary['id'], model_update)
+            if vol_update:
+                self.db.volume_update(context, secondary['id'], vol_update)
+            if rel_update:
+                rel_id = replication_relationship['id']
+                self.db.replication_relationship_update(context, rel_id,
+                                                        rel_update)
         except Exception:
             with excutils.save_and_reraise_exception():
                 LOG.exception(_('volume %(vol)s: error enabling replica '
