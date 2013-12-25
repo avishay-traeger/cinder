@@ -491,6 +491,10 @@ class VolumeDriver(object):
         msg = _("delete_replica not implemented")
         raise NotImplementedError(msg)
 
+    def replication_swap(self, context, replication_relationship):
+        msg = _("replication_swap not implemented")
+        raise NotImplementedError(msg)
+
 
 class ISCSIDriver(VolumeDriver):
     """Executes commands relating to ISCSI volumes.

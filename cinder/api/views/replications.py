@@ -41,7 +41,7 @@ class ViewBuilder(common.ViewBuilder):
         return {
             'relationship': {
                 'id': relationship['id'],
-                'primary_id': relationship.get('primary_id'),
+                'primary_id': relationship['primary_id'],
                 'status': relationship['status'],
                 'links': self._get_links(request,
                                          relationship['id']),
@@ -53,8 +53,8 @@ class ViewBuilder(common.ViewBuilder):
         return {
             'relationship': {
                 'id': relationship['id'],
-                'primary_id': relationship.get('primary_id'),
-                'secondary_id': relationship.get('secondary_id'),
+                'primary_id': relationship['primary_id'],
+                'secondary_id': relationship['secondary_id'],
                 'status': relationship['status'],
                 'extended_status': relationship['extended_status'],
                 'links': self._get_links(request, relationship['id']),
@@ -63,7 +63,7 @@ class ViewBuilder(common.ViewBuilder):
 
     def _list_view(self, func, request, relationships):
         """Provide a view for a list of relationships."""
-        r_list = [func(request, relationship)['relationship'] for relationship in
+        r_list = [func(request, rel)['relationship'] for rel in
                   relationships]
         r_links = self._get_collection_links(request, relationships,
                                              self._collection_name)

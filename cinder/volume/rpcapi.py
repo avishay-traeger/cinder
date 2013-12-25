@@ -48,7 +48,7 @@ class VolumeAPI(cinder.openstack.common.rpc.proxy.RpcProxy):
         1.10 - Add migrate_volume_completion, remove rename_volume.
         1.11 - Adds mode parameter to attach_volume()
                to support volume read-only attaching.
-        1.12 - Add create_replica, delete_replica.
+        1.12 - Add create_replica, delete_replica, replication_swap.
     '''
 
     BASE_RPC_API_VERSION = '1.0'
@@ -198,4 +198,12 @@ class VolumeAPI(cinder.openstack.common.rpc.proxy.RpcProxy):
                                        relationship_id=relationship['id']),
                          topic=rpc.queue_get_for(ctxt, self.topic,
                                                  secondary['host']),
+                         version='1.12')
+
+    def replication_swap(self, ctxt, relationship):
+        host = relationship['primary_volume']['host']
+        return self.cast(ctxt,
+                         self.make_msg('replication_swap',
+                                       relationship_id=relationship['id']),
+                         topic=rpc.queue_get_for(ctxt, self.topic, host),
                          version='1.12')

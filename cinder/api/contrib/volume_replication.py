@@ -57,21 +57,6 @@ class ReplicationsTemplate(xmlutil.TemplateBuilder):
         return xmlutil.MasterTemplate(root, 1, nsmap={alias: namespace})
 
 
-class SwapDeserializer(wsgi.MetadataXMLDeserializer):
-    def default(self, string):
-        dom = utils.safe_minidom_parse_string(string)
-        relationship = self._extract_relationship(dom)
-        return {'body': {'relationship': relationship}}
-
-    def _extract_relationship(self, node):
-        rep = {}
-        replication_node = self.find_first_child_named(node, 'relationship')
-        rel_id = replication_node.getAttribute('relationship_id')
-        if rel_id:
-            rep['relationship_id'] = rel_id
-        return rep
-
-
 class VolumeReplicationController(wsgi.Controller):
     """The Volume Replication API controller for the Openstack API."""
 
@@ -92,7 +77,8 @@ class VolumeReplicationController(wsgi.Controller):
         except exception.ReplicationRelationshipNotFound as error:
             raise exc.HTTPNotFound(explanation=error.msg)
 
-        return self._view_builder.detail(req, relationship)
+        ret = self._view_builder.detail(req, relationship)
+        return ret
 
     @wsgi.serializers(xml=ReplicationsTemplate)
     def index(self, req):
@@ -139,32 +125,37 @@ class VolumeReplicationController(wsgi.Controller):
 
         return relationships
 
-    @wsgi.response(202)
     @wsgi.serializers(xml=ReplicationTemplate)
-    @wsgi.deserializers(xml=SwapDeserializer)
-    def swap(self, req, body):
-        """Swap roles of volumes in a replication relationship."""
-        LOG.debug(_('Swapping volume replication roles: %s'), body)
+    def update(self, req, id, body):
+        """Update a replication relationship."""
+        context = req.environ['cinder.context']
         if not self.is_valid_body(body, 'relationship'):
             raise exc.HTTPBadRequest()
 
-        context = req.environ['cinder.context']
+        updates = body['relationship']
+        if not isinstance(updates, dict):
+            log_msg = _('Updates should be passed as dictionary')
+            LOG.debug(log_msg)
+            raise exc.HTTPBadRequest()
 
-        try:
-            relationship = body['relationship']
-            relationship_id = relationship['relationship_id']
-        except KeyError:
-            msg = _("Incorrect request body format")
-            raise exc.HTTPBadRequest(explanation=msg)
+        update_dict = {}
+        valid_update_keys = ('swap')
+        for key in updates:
+            if key in valid_update_keys:
+                update_dict[key] = updates[key]
+            else:
+                log_msg = _('Unknown update key: %s') % key
+                LOG.debug(log_msg)
+                raise exc.HTTPBadRequest()
 
-        LOG.audit(_("Swapping replication roles of relationship %s"),
-                  relationship_id,
-                  context=context)
-
-        try:
-            self.replication_api.swap(context, relationship_id)
-        except exception.ReplicationRelationshipNotFound as error:
-            raise exc.HTTPNotFound(explanation=error.msg)
+        if 'swap' in update_dict:
+            LOG.audit(_('Swapping replication roles of relationship %s'),
+                      str(id),
+                      context=context)
+            try:
+                self.replication_api.swap(context, id)
+            except exception.ReplicationRelationshipNotFound as error:
+                raise exc.HTTPNotFound(explanation=error.msg)
 
         return webob.Response(status_int=202)
 
@@ -183,7 +174,6 @@ class Volume_replication(extensions.ExtensionDescriptor):
         res = extensions.ResourceExtension(Volume_replication.alias,
                                            VolumeReplicationController(),
                                            collection_actions={'detail':
-                                                               'GET'},
-                                           member_actions={'swap': 'POST'})
+                                                               'GET'})
         resources.append(res)
         return resources

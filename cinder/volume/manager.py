@@ -1047,6 +1047,26 @@ class VolumeManager(manager.SchedulerDependentManager):
                 LOG.exception(_('volume %(vol)s: error updating model for '
                                 'replica %(rep)s') % msg_dict)
 
+    def replication_swap(self, context, relationship_id):
+        """Swaps roles of primary and secondary volumes in a relationship."""
+        relationship = self.db.replication_relationship_get(context,
+                                                            relationship_id)
+        try:
+            self.driver.replication_swap(context, relationship)
+            update = {'primary_id': relationship['secondary_id'],
+                      'secondary_id': relationship['primary_id']}
+            self.db.replication_relationship_update(context,
+                                                    relationship['id'],
+                                                    update)
+        except Exception:
+            LOG.exception(_('Error swapping roles in replication relationship '
+                            '%s') % relationship['id'])
+            update = {'status': 'error',
+                      'extended_status': 'Failed to swap replication roles.'}
+            self.db.replication_relationship_update(context,
+                                                    relationship['id'],
+                                                    update)
+
     @utils.require_driver_initialized
     def delete_replica(self, context, relationship_id):
         """Deletes a replica of a volume."""

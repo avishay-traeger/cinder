@@ -1602,6 +1602,9 @@ class StorwizeSVCDriver(san.SanDriver):
             return
         self._remove_vdisk_copy(primary, copy_id)
 
+    def replication_swap(self, ctxt, relationship):
+        pass
+
     def replication_status_check(self, ctxt, relationship):
         def _check_copy_ok(volume, pool, copy_type):
             try:

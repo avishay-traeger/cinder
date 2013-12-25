@@ -1,5 +1,4 @@
-# Copyright (C) 2013 Hewlett-Packard Development Company, L.P.
-# All Rights Reserved.
+# Copyright 2013 IBM Corp.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
 #    not use this file except in compliance with the License. You may obtain
@@ -23,7 +22,7 @@ from cinder import exception
 from cinder.openstack.common import excutils
 from cinder.openstack.common import log as logging
 from cinder import policy
-from cinder.volume import api as volume_api
+from cinder.volume import rpcapi as volume_rpcapi
 
 
 LOG = logging.getLogger(__name__)
@@ -43,7 +42,7 @@ class API(base.Base):
 
     def __init__(self, db_driver=None):
         super(API, self).__init__(db_driver)
-        self.volume_api = volume_api.API()
+        self.volume_rpcapi = volume_rpcapi.VolumeAPI()
 
     def get(self, context, relationship_id):
         check_policy(context, 'get')
@@ -78,4 +77,7 @@ class API(base.Base):
 
         return rels
 
-    #def swap(self, context, relationship_id):
+    def swap(self, context, relationship_id):
+        check_policy(context, 'swap')
+        rel = self.db.replication_relationship_get(context, relationship_id)
+        self.volume_rpcapi.replication_swap(context, rel)
